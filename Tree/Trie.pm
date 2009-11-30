@@ -359,6 +359,42 @@ sub remove {
 	return $retnum;
 }
 
+## Merge two tries. Third argument is a callback to merge duplicate entries.
+sub merge {
+  my ($trie1, $trie2, $callback) = @_;
+  die "Argument must be an instance of Tree::Trie."
+    unless $trie1->isa('Tree::Trie')
+        && $trie2->isa('Tree::Trie');
+
+  die "Cannot handle tries with different end markers yet."
+    unless $trie1->{_END} eq $trie2->{_END};
+
+  # Handy access to the end value.
+  my $end = $trie1->{_END};
+  # Right side overwrites left side by default.
+  $callback ||= sub { ${$_[0]} = ${$_[1]} };
+
+  # Use an anonymous sub to prevent forming a closure.
+  my $inner_merge;
+  $inner_merge = sub {
+    my ($tref1, $tref2) = @_;
+    foreach (keys %$tref2) {
+      if ($_ eq $end) {
+        $callback->(\ $tref1->{$_}, \ $tref2->{$_});
+      } elsif (exists $tref1->{$_}) {
+        $inner_merge->($tref1->{$_}, $tref2->{$_});
+      } else {
+        $tref1->{$_} = {};
+        $inner_merge->($tref1->{$_}, $tref2->{$_});
+      }
+    }
+  };
+
+  $inner_merge->($trie1->{_MAINHASHREF}, $trie2->{_MAINHASHREF});
+
+  return $trie1;
+}
+
 ## These are PRIVATE METHODS.  Don't call them directly unless you really
  # know what you're doing, or you enjoy things working funny.
 
@@ -939,6 +975,20 @@ a hash, all the of the array references (remember, words are array refs when
 using multi-character letters) will be stringified, which renders them (for
 the most part) useless.
 
+=item $trie->merge(I<source>, [I<callback>])
+
+Merge contents of the source trie into the callee trie using a recursive
+merging algorithm. If I<callback> is provided, it must be a subroutine
+reference for a merge function that will be called when conflicting values are
+found in the two tries.  This function will only merge tries that have the same
+end markers. To merge tries with different end markers, perhaps use
+$trie1->add($trie2->lookup("")), though merge is 5-8 times faster.
+
+The default merge function is sub { ${$_[0]} = ${$_[1]} }, that is, values from
+the argument trie replace values in the callee trie.
+
+Returns something useful.
+
 =item $trie->deepsearch()
 
 =item $trie->deepsearch(I<new_setting>)
@@ -1087,6 +1137,7 @@ None at this time.
 =head1 AUTHOR
 
 Copyright 2007 Avi Finkel <F<avi@finkel.org>>
+Copyright 2009 Aaron Stone <F<aaron@serendipity.cx>>
 
 This package is free software and is provided "as is" without express
 or implied warranty.  It may be used, redistributed and/or modified
